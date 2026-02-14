@@ -154,6 +154,14 @@ tests/
   scorer.test.js
   transcript-parser.test.js
   install.test.js
+  integration.test.js
+  hook-contract.test.js
+  edge-cases.test.js
+  regression.test.js
+  stress.test.js
+  concurrency.test.js
+  real-transcript.test.js
+  coverage-gaps.test.js
 ```
 
 ## Requirements

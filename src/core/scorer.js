@@ -15,9 +15,9 @@ export function computeImportance(memory, now = Date.now()) {
 
   if (isNaN(createdAt) || isNaN(lastAccessed)) return memory.score ?? 0.5;
 
-  const freshnesssDays = Math.max(0.01, (now - lastAccessed) / 86400000);
+  const freshnessDays = Math.max(0.01, (now - lastAccessed) / 86400000);
 
-  const recency = Math.exp(-0.693 * freshnesssDays / 7);
+  const recency = Math.exp(-0.693 * freshnessDays / 7);
 
   const frequency = Math.log2((memory.access_count || 0) + 1) + 1;
 
