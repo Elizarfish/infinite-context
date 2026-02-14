@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infinite Context</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#09090b;--surface:#18181b;--surface2:#27272a;--border:#3f3f46;--text:#fafafa;--muted:#a1a1aa;--primary:#6366f1;--primary-hover:#818cf8;--danger:#ef4444;--success:#22c55e;--warning:#f59e0b;--radius:8px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,monospace}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+a{color:var(--primary);text-decoration:none}
+button{cursor:pointer;font-family:inherit;border:none;border-radius:var(--radius);padding:6px 14px;font-size:13px;transition:all .15s}
+input,select{font-family:inherit;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px;font-size:13px;outline:none;transition:border .15s}
+input:focus,select:focus{border-color:var(--primary)}
+
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);padding:16px 0;display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:10}
+.sidebar h1{font-size:15px;padding:0 20px 16px;border-bottom:1px solid var(--border);margin-bottom:8px;font-weight:600;letter-spacing:-.3px}
+.sidebar h1 span{color:var(--primary)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--primary);background:rgba(99,102,241,.1);border-right:2px solid var(--primary)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding:12px 20px;border-top:1px solid var(--border)}
+.lang-toggle{display:flex;gap:0;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.lang-btn{flex:1;padding:6px 0;font-size:12px;font-weight:600;text-align:center;background:transparent;color:var(--muted);border-radius:0;transition:all .15s}
+.lang-btn.active{background:var(--primary);color:white}
+.lang-btn:hover:not(.active){color:var(--text)}
+
+.main{margin-left:220px;flex:1;padding:24px;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+
+.page-title{font-size:20px;font-weight:600;margin-bottom:20px;letter-spacing:-.3px}
+
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.stat-card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.stat-card .value{font-size:28px;font-weight:700;letter-spacing:-1px}
+.stat-card .sub{font-size:12px;color:var(--muted);margin-top:4px}
+
+.cat-bars{display:flex;flex-direction:column;gap:8px;margin-bottom:24px}
+.cat-bar{display:flex;align-items:center;gap:12px}
+.cat-bar .cat-name{width:120px;font-size:12px;color:var(--muted);text-align:right;flex-shrink:0}
+.cat-bar .bar-wrap{flex:1;height:24px;background:var(--surface);border-radius:4px;overflow:hidden;position:relative}
+.cat-bar .bar-fill{height:100%;border-radius:4px;transition:width .4s ease;display:flex;align-items:center;padding:0 8px;font-size:11px;color:white;white-space:nowrap}
+.cat-bar .bar-count{font-size:12px;color:var(--muted);width:60px;flex-shrink:0}
+
+.toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.toolbar input[type=text]{flex:1;min-width:200px}
+.toolbar select{min-width:120px}
+.btn{background:var(--primary);color:white;font-weight:500}
+.btn:hover{background:var(--primary-hover)}
+.btn-danger{background:var(--danger)}
+.btn-danger:hover{background:#dc2626}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btn-outline:hover{border-color:var(--primary);color:var(--primary)}
+.btn-sm{padding:4px 10px;font-size:12px}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--text)}
+th.sorted{color:var(--primary)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500}
+.badge-architecture{background:rgba(99,102,241,.15);color:#a5b4fc}
+.badge-decision{background:rgba(245,158,11,.15);color:#fcd34d}
+.badge-error{background:rgba(239,68,68,.15);color:#fca5a5}
+.badge-finding{background:rgba(34,197,94,.15);color:#86efac}
+.badge-file_change{background:rgba(59,130,246,.15);color:#93c5fd}
+.badge-note{background:rgba(161,161,170,.15);color:#d4d4d8}
+
+.score-bar{width:60px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:6px}
+.score-fill{height:100%;border-radius:3px}
+.content-cell{max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.content-cell:hover{white-space:normal;word-break:break-word}
+
+.pagination{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px;padding:16px 0}
+.pagination button{background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+.pagination button:hover{border-color:var(--primary);color:var(--primary)}
+.pagination button:disabled{opacity:.3;cursor:default}
+.pagination .page-info{font-size:13px;color:var(--muted)}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:24px}
+.modal h2{font-size:16px;margin-bottom:16px}
+.modal .field{margin-bottom:12px}
+.modal .field-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.modal .field-value{font-size:13px;word-break:break-word;line-height:1.5}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+
+.session-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
+.session-card .session-id{font-family:monospace;font-size:13px;color:var(--primary)}
+.session-card .session-meta{font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap}
+.session-card .session-stat{display:flex;align-items:center;gap:4px}
+
+.config-table{width:100%}
+.config-table td{padding:8px 12px;font-size:13px}
+.config-table td:first-child{color:var(--primary);font-family:monospace;width:250px}
+
+.empty{text-align:center;padding:48px;color:var(--muted)}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 20px;font-size:13px;z-index:200;transform:translateY(100px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.refresh-indicator{font-size:11px;color:var(--muted);margin-left:auto}
+
+@media(max-width:768px){
+  .sidebar{width:60px}
+  .sidebar h1,.nav-item span,.sidebar-footer{display:none}
+  .nav-item{justify-content:center;padding:12px}
+  .main{margin-left:60px;padding:16px}
+  .stats-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+  <h1><span>&infin;</span> Context</h1>
+  <div class="nav-item active" data-page="overview">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span data-i18n="nav.overview">Overview</span>
+  </div>
+  <div class="nav-item" data-page="memories">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 6v6l4 2"/></svg>
+    <span data-i18n="nav.memories">Memories</span>
+  </div>
+  <div class="nav-item" data-page="projects">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+    <span data-i18n="nav.projects">Projects</span>
+  </div>
+  <div class="nav-item" data-page="sessions">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <span data-i18n="nav.sessions">Sessions</span>
+  </div>
+  <div class="nav-item" data-page="config">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    <span data-i18n="nav.config">Config</span>
+  </div>
+  <div class="sidebar-footer">
+    <div class="lang-toggle">
+      <button class="lang-btn active" data-lang="en">EN</button>
+      <button class="lang-btn" data-lang="ru">RU</button>
+    </div>
+  </div>
+</nav>
+
+<div class="main">
+  <div id="page-overview" class="page active">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <h2 class="page-title" style="margin-bottom:0" data-i18n="nav.overview">Overview</h2>
+      <span class="refresh-indicator" id="last-refresh"></span>
+    </div>
+    <div class="stats-grid" id="stats-grid"></div>
+    <h3 style="font-size:14px;margin-bottom:12px;color:var(--muted)" data-i18n="overview.catDist">Category Distribution</h3>
+    <div class="cat-bars" id="cat-bars"></div>
+    <h3 style="font-size:14px;margin:24px 0 12px;color:var(--muted)" data-i18n="overview.recentSessions">Recent Sessions</h3>
+    <div id="recent-sessions"></div>
+  </div>
+
+  <div id="page-memories" class="page">
+    <h2 class="page-title" data-i18n="nav.memories">Memories</h2>
+    <div class="toolbar">
+      <input type="text" id="mem-search" data-i18n-placeholder="mem.searchPlaceholder" placeholder="Search memories...">
+      <select id="mem-project"><option value="" data-i18n="mem.allProjects">All Projects</option></select>
+      <select id="mem-category">
+        <option value="" data-i18n="mem.allCategories">All Categories</option>
+        <option value="architecture" data-i18n="cat.architecture">Architecture</option>
+        <option value="decision" data-i18n="cat.decision">Decision</option>
+        <option value="error" data-i18n="cat.error">Error</option>
+        <option value="finding" data-i18n="cat.finding">Finding</option>
+        <option value="file_change" data-i18n="cat.file_change">File Change</option>
+        <option value="note" data-i18n="cat.note">Note</option>
+      </select>
+      <select id="mem-sort">
+        <option value="score" data-i18n="mem.sortScore">Score</option>
+        <option value="created" data-i18n="mem.sortCreated">Created</option>
+        <option value="accessed" data-i18n="mem.sortAccessed">Last Accessed</option>
+        <option value="access_count" data-i18n="mem.sortHits">Access Count</option>
+      </select>
+      <button class="btn" onclick="loadMemories()" data-i18n="mem.search">Search</button>
+    </div>
+    <div id="memories-table"></div>
+    <div class="pagination" id="mem-pagination"></div>
+  </div>
+
+  <div id="page-projects" class="page">
+    <h2 class="page-title" data-i18n="nav.projects">Projects</h2>
+    <div id="projects-list"></div>
+  </div>
+
+  <div id="page-sessions" class="page">
+    <h2 class="page-title" data-i18n="nav.sessions">Sessions</h2>
+    <div id="sessions-list"></div>
+  </div>
+
+  <div id="page-config" class="page">
+    <h2 class="page-title" data-i18n="nav.config">Configuration</h2>
+    <div style="display:flex;gap:12px;margin-bottom:20px">
+      <button class="btn" onclick="doPrune()" data-i18n="config.runPrune">Run Decay & Prune</button>
+      <button class="btn-outline btn" onclick="doPruneOld()" data-i18n="config.pruneOld">Prune Old (30d)</button>
+    </div>
+    <table class="config-table" id="config-table"></table>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '';
+let memState = { page: 1 };
+
+const i18n = {
+  en: {
+    'nav.overview': 'Overview',
+    'nav.memories': 'Memories',
+    'nav.projects': 'Projects',
+    'nav.sessions': 'Sessions',
+    'nav.config': 'Configuration',
+    'overview.catDist': 'Category Distribution',
+    'overview.recentSessions': 'Recent Sessions',
+    'overview.totalMemories': 'Total Memories',
+    'overview.dbSize': 'Database Size',
+    'overview.sessions': 'Sessions',
+    'overview.decayFactor': 'Decay Factor',
+    'overview.maxPerProject': 'max per project',
+    'overview.active': 'active',
+    'overview.pruneBelow': 'Prune below',
+    'overview.noSessions': 'No sessions yet',
+    'overview.updated': 'Updated',
+    'mem.searchPlaceholder': 'Search memories...',
+    'mem.allProjects': 'All Projects',
+    'mem.allCategories': 'All Categories',
+    'mem.search': 'Search',
+    'mem.sortScore': 'Score',
+    'mem.sortCreated': 'Created',
+    'mem.sortAccessed': 'Last Accessed',
+    'mem.sortHits': 'Access Count',
+    'mem.noResults': 'No memories found',
+    'mem.prev': 'Prev',
+    'mem.next': 'Next',
+    'mem.total': 'total',
+    'mem.memory': 'memory',
+    'mem.memories': 'memories',
+    'mem.deleted': 'deleted',
+    'mem.notFound': 'Memory not found',
+    'th.id': 'ID',
+    'th.category': 'Category',
+    'th.content': 'Content',
+    'th.score': 'Score',
+    'th.created': 'Created',
+    'th.hits': 'Hits',
+    'modal.close': 'Close',
+    'modal.delete': 'Delete',
+    'modal.category': 'Category',
+    'modal.content': 'Content',
+    'modal.keywords': 'Keywords',
+    'modal.score': 'Score',
+    'modal.accessCount': 'Access Count',
+    'modal.created': 'Created',
+    'modal.lastAccessed': 'Last Accessed',
+    'modal.project': 'Project',
+    'modal.session': 'Session',
+    'modal.sourceHash': 'Source Hash',
+    'modal.metadata': 'Metadata',
+    'cat.architecture': 'Architecture',
+    'cat.decision': 'Decision',
+    'cat.error': 'Error',
+    'cat.finding': 'Finding',
+    'cat.file_change': 'File Change',
+    'cat.note': 'Note',
+    'projects.noProjects': 'No projects yet',
+    'sessions.noSessions': 'No sessions yet',
+    'sessions.started': 'Started',
+    'sessions.ended': 'Ended',
+    'sessions.project': 'Project',
+    'stat.memories': 'memories',
+    'stat.compactions': 'compactions',
+    'config.runPrune': 'Run Decay & Prune',
+    'config.pruneOld': 'Prune Old (30d)',
+    'config.pruned': 'Pruned',
+    'time.justNow': 'just now',
+    'time.mAgo': 'm ago',
+    'time.hAgo': 'h ago',
+    'time.dAgo': 'd ago',
+    'avg': 'avg',
+    'project': 'project',
+    'projects': 'projects',
+  },
+  ru: {
+    'nav.overview': 'Обзор',
+    'nav.memories': 'Воспоминания',
+    'nav.projects': 'Проекты',
+    'nav.sessions': 'Сессии',
+    'nav.config': 'Настройки',
+    'overview.catDist': 'Распределение по категориям',
+    'overview.recentSessions': 'Последние сессии',
+    'overview.totalMemories': 'Всего воспоминаний',
+    'overview.dbSize': 'Размер базы',
+    'overview.sessions': 'Сессии',
+    'overview.decayFactor': 'Фактор затухания',
+    'overview.maxPerProject': 'максимум на проект',
+    'overview.active': 'активных',
+    'overview.pruneBelow': 'Удалять ниже',
+    'overview.noSessions': 'Сессий пока нет',
+    'overview.updated': 'Обновлено',
+    'mem.searchPlaceholder': 'Поиск по воспоминаниям...',
+    'mem.allProjects': 'Все проекты',
+    'mem.allCategories': 'Все категории',
+    'mem.search': 'Найти',
+    'mem.sortScore': 'Оценка',
+    'mem.sortCreated': 'Создано',
+    'mem.sortAccessed': 'Последний доступ',
+    'mem.sortHits': 'Обращений',
+    'mem.noResults': 'Ничего не найдено',
+    'mem.prev': 'Назад',
+    'mem.next': 'Далее',
+    'mem.total': 'всего',
+    'mem.memory': 'запись',
+    'mem.memories': 'записей',
+    'mem.deleted': 'удалено',
+    'mem.notFound': 'Запись не найдена',
+    'th.id': 'ID',
+    'th.category': 'Категория',
+    'th.content': 'Содержимое',
+    'th.score': 'Оценка',
+    'th.created': 'Создано',
+    'th.hits': 'Хиты',
+    'modal.close': 'Закрыть',
+    'modal.delete': 'Удалить',
+    'modal.category': 'Категория',
+    'modal.content': 'Содержимое',
+    'modal.keywords': 'Ключевые слова',
+    'modal.score': 'Оценка',
+    'modal.accessCount': 'Обращений',
+    'modal.created': 'Создано',
+    'modal.lastAccessed': 'Последний доступ',
+    'modal.project': 'Проект',
+    'modal.session': 'Сессия',
+    'modal.sourceHash': 'Хеш источника',
+    'modal.metadata': 'Метаданные',
+    'cat.architecture': 'Архитектура',
+    'cat.decision': 'Решение',
+    'cat.error': 'Ошибка',
+    'cat.finding': 'Находка',
+    'cat.file_change': 'Изменение файла',
+    'cat.note': 'Заметка',
+    'projects.noProjects': 'Проектов пока нет',
+    'sessions.noSessions': 'Сессий пока нет',
+    'sessions.started': 'Начало',
+    'sessions.ended': 'Конец',
+    'sessions.project': 'Проект',
+    'stat.memories': 'записей',
+    'stat.compactions': 'сжатий',
+    'config.runPrune': 'Затухание и очистка',
+    'config.pruneOld': 'Очистить старые (30д)',
+    'config.pruned': 'Очищено',
+    'time.justNow': 'только что',
+    'time.mAgo': 'м назад',
+    'time.hAgo': 'ч назад',
+    'time.dAgo': 'д назад',
+    'avg': 'сред',
+    'project': 'проект',
+    'projects': 'проектов',
+  }
+};
+
+let lang = localStorage.getItem('ic-lang') || (navigator.language.startsWith('ru') ? 'ru' : 'en');
+
+function t(key) { return (i18n[lang] && i18n[lang][key]) || i18n.en[key] || key; }
+
+function catName(cat) { return t('cat.' + cat) || cat; }
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+  document.documentElement.lang = lang;
+}
+
+document.querySelectorAll('.lang-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    lang = btn.dataset.lang;
+    localStorage.setItem('ic-lang', lang);
+    applyI18n();
+    const activePage = document.querySelector('.page.active')?.id?.replace('page-', '');
+    if (activePage === 'overview') loadOverview();
+    else if (activePage === 'memories') loadMemories(memState.page);
+    else if (activePage === 'projects') loadProjects();
+    else if (activePage === 'sessions') loadSessions();
+    else if (activePage === 'config') loadConfig();
+  });
+});
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    const page = item.dataset.page;
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'overview') loadOverview();
+    if (page === 'memories') loadMemories();
+    if (page === 'projects') loadProjects();
+    if (page === 'sessions') loadSessions();
+    if (page === 'config') loadConfig();
+  });
+});
+
+document.getElementById('mem-search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadMemories();
+});
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, opts);
+  return res.json();
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '\u2014';
+  const d = new Date(dateStr + 'Z');
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return t('time.justNow');
+  if (diff < 3600) return Math.floor(diff/60) + t('time.mAgo');
+  if (diff < 86400) return Math.floor(diff/3600) + t('time.hAgo');
+  return Math.floor(diff/86400) + t('time.dAgo');
+}
+
+function shortPath(p, max = 40) {
+  if (!p || p.length <= max) return p || '\u2014';
+  return '...' + p.slice(-(max - 3));
+}
+
+function scoreColor(score) {
+  if (score >= 0.8) return 'var(--success)';
+  if (score >= 0.5) return 'var(--primary)';
+  if (score >= 0.3) return 'var(--warning)';
+  return 'var(--danger)';
+}
+
+const catColors = {
+  architecture: '#6366f1', decision: '#f59e0b', error: '#ef4444',
+  finding: '#22c55e', file_change: '#3b82f6', note: '#a1a1aa',
+};
+
+async function loadOverview() {
+  const data = await api('/api/stats');
+  document.getElementById('last-refresh').textContent = t('overview.updated') + ' ' + new Date().toLocaleTimeString();
+
+  const pLabel = data.byProject.length !== 1 ? t('projects') : t('project');
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card">
+      <div class="label">${t('overview.totalMemories')}</div>
+      <div class="value">${data.total}</div>
+      <div class="sub">${data.byProject.length} ${pLabel}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">${t('overview.dbSize')}</div>
+      <div class="value">${formatBytes(data.dbSize)}</div>
+      <div class="sub">${data.config.maxMemoriesPerProject} ${t('overview.maxPerProject')}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">${t('overview.sessions')}</div>
+      <div class="value">${data.sessions.length}</div>
+      <div class="sub">${data.sessions.filter(s => !s.ended_at).length} ${t('overview.active')}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">${t('overview.decayFactor')}</div>
+      <div class="value">${data.config.decayFactor}</div>
+      <div class="sub">${t('overview.pruneBelow')} ${data.config.pruneThreshold}</div>
+    </div>
+  `;
+
+  const maxCat = Math.max(1, ...data.categories.map(c => c.cnt));
+  document.getElementById('cat-bars').innerHTML = data.categories.map(c => `
+    <div class="cat-bar">
+      <div class="cat-name">${catName(c.category)}</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" style="width:${(c.cnt/maxCat*100).toFixed(1)}%;background:${catColors[c.category]||'#666'}">
+          ${c.cnt > 0 ? `${t('avg')} ${c.avg_score.toFixed(2)}` : ''}
+        </div>
+      </div>
+      <div class="bar-count">${c.cnt}</div>
+    </div>
+  `).join('');
+
+  document.getElementById('recent-sessions').innerHTML = data.sessions.slice(0, 5).map(s => `
+    <div class="session-card">
+      <div>
+        <div class="session-id">${escHtml(s.session_id.slice(0, 12))}...</div>
+        <div class="session-meta">
+          <span class="session-stat">${s.started_at}</span>
+          <span class="session-stat">${s.ended_at ? '\u2192 ' + s.ended_at : '(\u25cf ' + t('overview.active') + ')'}</span>
+        </div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:16px">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:600">${s.memories_created}</div>
+          <div style="font-size:11px;color:var(--muted)">${t('stat.memories')}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:600">${s.compactions}</div>
+          <div style="font-size:11px;color:var(--muted)">${t('stat.compactions')}</div>
+        </div>
+      </div>
+    </div>
+  `).join('') || `<div class="empty">${t('overview.noSessions')}</div>`;
+}
+
+async function loadMemories(page = 1) {
+  memState.page = page;
+  const search = document.getElementById('mem-search').value;
+  const project = document.getElementById('mem-project').value;
+  const category = document.getElementById('mem-category').value;
+  const sort = document.getElementById('mem-sort').value;
+
+  const params = new URLSearchParams({ page, limit: 50, sort, order: 'desc' });
+  if (search) params.set('search', search);
+  if (project) params.set('project', project);
+  if (category) params.set('category', category);
+
+  const data = await api('/api/memories?' + params);
+
+  if (data.rows.length === 0) {
+    document.getElementById('memories-table').innerHTML = `<div class="empty">${t('mem.noResults')}</div>`;
+    document.getElementById('mem-pagination').innerHTML = '';
+    return;
+  }
+
+  document.getElementById('memories-table').innerHTML = `
+    <table>
+      <tr>
+        <th style="width:40px">${t('th.id')}</th>
+        <th style="width:100px">${t('th.category')}</th>
+        <th>${t('th.content')}</th>
+        <th style="width:100px">${t('th.score')}</th>
+        <th style="width:90px">${t('th.created')}</th>
+        <th style="width:50px">${t('th.hits')}</th>
+        <th style="width:50px"></th>
+      </tr>
+      ${data.rows.map(m => `
+        <tr>
+          <td style="color:var(--muted);font-size:12px">${m.id}</td>
+          <td><span class="badge badge-${escAttr(m.category)}">${catName(m.category)}</span></td>
+          <td class="content-cell" onclick="showMemory(${m.id})">${escHtml(m.content)}</td>
+          <td>
+            <span class="score-bar"><span class="score-fill" style="width:${(m.score*100).toFixed(0)}%;background:${scoreColor(m.score)}"></span></span>
+            <span style="font-size:12px">${m.score.toFixed(3)}</span>
+          </td>
+          <td style="font-size:12px;color:var(--muted)">${timeAgo(m.created_at)}</td>
+          <td style="text-align:center;color:var(--muted)">${m.access_count}</td>
+          <td><button class="btn-sm btn-danger" onclick="deleteMemory(${m.id},event)">\u00d7</button></td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+
+  const pg = document.getElementById('mem-pagination');
+  if (data.pages > 1) {
+    pg.innerHTML = `
+      <button ${page <= 1 ? 'disabled' : ''} onclick="loadMemories(${page-1})">\u2190 ${t('mem.prev')}</button>
+      <span class="page-info">${page} / ${data.pages} (${data.total} ${t('mem.total')})</span>
+      <button ${page >= data.pages ? 'disabled' : ''} onclick="loadMemories(${page+1})">${t('mem.next')} \u2192</button>
+    `;
+  } else {
+    pg.innerHTML = `<span class="page-info">${data.total} ${data.total === 1 ? t('mem.memory') : t('mem.memories')}</span>`;
+  }
+}
+
+async function showMemory(id) {
+  const m = await api('/api/memories/' + id);
+  if (m.error) return toast(t('mem.notFound'));
+
+  let meta = '';
+  try { meta = m.metadata ? JSON.stringify(JSON.parse(m.metadata), null, 2) : '\u2014'; } catch { meta = m.metadata || '\u2014'; }
+
+  document.getElementById('modal-content').innerHTML = `
+    <h2>Memory #${m.id}</h2>
+    <div class="field">
+      <div class="field-label">${t('modal.category')}</div>
+      <div class="field-value"><span class="badge badge-${escAttr(m.category)}">${catName(m.category)}</span></div>
+    </div>
+    <div class="field">
+      <div class="field-label">${t('modal.content')}</div>
+      <div class="field-value" style="white-space:pre-wrap;background:var(--surface2);padding:12px;border-radius:6px;max-height:300px;overflow-y:auto">${escHtml(m.content)}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">${t('modal.keywords')}</div>
+      <div class="field-value" style="color:var(--muted)">${escHtml(m.keywords)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field"><div class="field-label">${t('modal.score')}</div><div class="field-value">${m.score.toFixed(4)}</div></div>
+      <div class="field"><div class="field-label">${t('modal.accessCount')}</div><div class="field-value">${m.access_count}</div></div>
+      <div class="field"><div class="field-label">${t('modal.created')}</div><div class="field-value">${m.created_at}</div></div>
+      <div class="field"><div class="field-label">${t('modal.lastAccessed')}</div><div class="field-value">${m.last_accessed}</div></div>
+      <div class="field"><div class="field-label">${t('modal.project')}</div><div class="field-value" style="font-size:12px;word-break:break-all">${escHtml(m.project)}</div></div>
+      <div class="field"><div class="field-label">${t('modal.session')}</div><div class="field-value" style="font-size:12px">${escHtml(m.session_id.slice(0, 16))}...</div></div>
+    </div>
+    <div class="field"><div class="field-label">${t('modal.sourceHash')}</div><div class="field-value" style="font-family:monospace;font-size:12px">${escHtml(m.source_hash) || '\u2014'}</div></div>
+    <div class="field"><div class="field-label">${t('modal.metadata')}</div><div class="field-value" style="font-family:monospace;font-size:12px;white-space:pre-wrap">${escHtml(meta)}</div></div>
+    <div class="actions">
+      <button class="btn-outline btn" onclick="closeModal()">${t('modal.close')}</button>
+      <button class="btn-danger btn" onclick="deleteMemory(${m.id});closeModal()">${t('modal.delete')}</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+async function deleteMemory(id, event) {
+  if (event) event.stopPropagation();
+  const res = await api('/api/memories/' + id, { method: 'DELETE' });
+  if (res.deleted) {
+    toast('Memory #' + id + ' ' + t('mem.deleted'));
+    loadMemories(memState.page);
+  }
+}
+
+async function loadProjects() {
+  const data = await api('/api/projects');
+  const projectSelect = document.getElementById('mem-project');
+  projectSelect.innerHTML = `<option value="">${t('mem.allProjects')}</option>` +
+    data.map(p => `<option value="${escAttr(p.project)}">${escHtml(shortPath(p.project, 60))}</option>`).join('');
+
+  if (data.length === 0) {
+    document.getElementById('projects-list').innerHTML = `<div class="empty">${t('projects.noProjects')}</div>`;
+    return;
+  }
+  document.getElementById('projects-list').innerHTML = data.map(p => `
+    <div class="session-card" style="cursor:pointer" onclick="navigateToProject('${escAttr(p.project)}')">
+      <div style="flex:1">
+        <div style="font-size:14px;margin-bottom:4px">${escHtml(shortPath(p.project, 60))}</div>
+        <div style="font-size:12px;color:var(--muted);font-family:monospace">${escHtml(p.project)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:22px;font-weight:700">${p.cnt}</div>
+        <div style="font-size:11px;color:var(--muted)">${t('stat.memories')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function navigateToProject(project) {
+  document.getElementById('mem-project').value = project;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-page=memories]').classList.add('active');
+  document.getElementById('page-memories').classList.add('active');
+  loadMemories();
+}
+
+async function loadSessions() {
+  const data = await api('/api/sessions');
+  if (data.length === 0) {
+    document.getElementById('sessions-list').innerHTML = `<div class="empty">${t('sessions.noSessions')}</div>`;
+    return;
+  }
+  document.getElementById('sessions-list').innerHTML = data.map(s => `
+    <div class="session-card">
+      <div style="flex:1">
+        <div class="session-id">${escHtml(s.session_id)}</div>
+        <div class="session-meta" style="margin-top:6px">
+          <span class="session-stat">${t('sessions.started')}: ${s.started_at}</span>
+          ${s.ended_at ? `<span class="session-stat">${t('sessions.ended')}: ${s.ended_at}</span>` : `<span style="color:var(--success)">\u25cf ${t('overview.active')}</span>`}
+        </div>
+        <div class="session-meta" style="margin-top:4px">
+          <span class="session-stat">${t('sessions.project')}: ${escHtml(shortPath(s.project, 50))}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:24px">
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:700">${s.memories_created}</div>
+          <div style="font-size:11px;color:var(--muted)">${t('stat.memories')}</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:700">${s.compactions}</div>
+          <div style="font-size:11px;color:var(--muted)">${t('stat.compactions')}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadConfig() {
+  const data = await api('/api/config');
+  document.getElementById('config-table').innerHTML = Object.entries(data).map(([k, v]) => {
+    const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return `<tr><td>${escHtml(k)}</td><td>${escHtml(val)}</td></tr>`;
+  }).join('');
+}
+
+async function doPrune() {
+  const res = await api('/api/prune', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  toast(`${t('config.pruned')} ${res.pruned} ${t('stat.memories')}`);
+  loadOverview();
+}
+async function doPruneOld() {
+  const res = await api('/api/prune', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ olderThan: 30 }) });
+  toast(`${t('config.pruned')} ${res.pruned} ${t('stat.memories')}`);
+  loadOverview();
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return escHtml(String(s)).replace(/'/g,'&#39;');
+}
+
+applyI18n();
+loadOverview();
+loadProjects();
+setInterval(() => { if (document.getElementById('page-overview').classList.contains('active')) loadOverview(); }, 30000);
+</script>
+</body>
+</html>

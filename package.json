@@ -1,0 +1,22 @@
+{
+  "name": "infinite-context",
+  "version": "1.0.0",
+  "description": "Infinite context for Claude Code — lossless compaction via SQLite archive and official hooks",
+  "type": "module",
+  "bin": {
+    "infinite-context": "./src/cli.js",
+    "ic": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "install-hooks": "node src/cli.js install",
+    "uninstall-hooks": "node src/cli.js uninstall"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}
