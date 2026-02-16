@@ -502,9 +502,9 @@ describe('FIX #16 — Dead code removed (dead length check in user-prompt-submit
   it('user-prompt-submit.js does not have dead .length < 1 check', async () => {
 
     const source = readFileSync(join(import.meta.dirname, '../src/hooks/user-prompt-submit.js'), 'utf-8');
-    // The fix removes the always-false `.length < 1` check
+    // The fix removes the always-false `.length < 1` check (use regex with word boundary to avoid matching .length < 15 etc.)
     assert.ok(
-      !source.includes('.length < 1'),
+      !/\.length\s*<\s*1\b/.test(source),
       'Dead .length < 1 check should be removed'
     );
   });

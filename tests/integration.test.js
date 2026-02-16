@@ -791,9 +791,9 @@ describe('Integration: Full Hook Lifecycle', () => {
       const subMemories = extractMemories(subTurns, PROJECT_CWD, subSessionId);
 
       if (subMemories.length > 0) {
-        // Tag with agent metadata
+        // Tag with agent metadata (plain object — insertMemory serializes once)
         for (const mem of subMemories) {
-          mem.metadata = JSON.stringify({ agentId: 'agent-abc123', agentType: 'researcher' });
+          mem.metadata = { agentId: 'agent-abc123', agentType: 'researcher' };
         }
         const subInserted = db.insertMany(subMemories);
         db.saveCheckpoint(subSessionId, subagentTranscriptPath, subLastLine);
@@ -1139,14 +1139,10 @@ describe('Integration: Full Hook Lifecycle', () => {
       const turns = groupIntoTurns(messages);
       const memories = extractMemories(turns, PROJECT_CWD, `${SESSION_ID}:agent-abc123`);
 
-      // subagent-stop.js sets mem.metadata = JSON.stringify({...})
-      // and insertMemory calls JSON.stringify(metadata) again internally,
-      // so we should set metadata as a plain object to avoid double-encoding.
-      // However, the real subagent-stop.js pre-stringifies. That means the stored
-      // value is double-encoded. Let's mirror what subagent-stop actually does
-      // and then parse accordingly.
+      // subagent-stop.js sets mem.metadata as plain object;
+      // insertMemory serializes it once via JSON.stringify.
       for (const mem of memories) {
-        mem.metadata = JSON.stringify({ agentId: 'agent-abc123', agentType: 'researcher' });
+        mem.metadata = { agentId: 'agent-abc123', agentType: 'researcher' };
       }
 
       resetConfig();
@@ -1157,11 +1153,8 @@ describe('Integration: Full Hook Lifecycle', () => {
       const retrieved = db.getTopMemories(PROJECT_CWD, 100);
       for (const m of retrieved) {
         if (m.metadata) {
-          // Because subagent-stop pre-stringifies and insertMemory stringifies again,
-          // the stored value is double-encoded. First parse gets the stringified JSON,
-          // second parse gets the actual object.
-          let meta = JSON.parse(m.metadata);
-          if (typeof meta === 'string') meta = JSON.parse(meta);
+          const meta = JSON.parse(m.metadata);
+          assert.equal(typeof meta, 'object', 'Single JSON.parse should yield object');
           assert.equal(meta.agentId, 'agent-abc123');
           assert.equal(meta.agentType, 'researcher');
         }
@@ -1878,15 +1871,15 @@ describe('Integration: Full Hook Lifecycle', () => {
   // Phase 20: Double-encoding lifecycle (Bug #2 comprehensive)
   // -----------------------------------------------------------------------
 
-  describe('Phase 20: Metadata Double-Encoding Full Lifecycle', () => {
-    it('should demonstrate the double-encoding bug from subagent-stop flow', () => {
+  describe('Phase 20: Metadata Serialization Full Lifecycle', () => {
+    it('should correctly serialize metadata from subagent-stop flow (fixed)', () => {
       resetConfig();
       const db = new Store(':memory:').open();
 
-      // Simulate exactly what subagent-stop.js does:
+      // Simulate what subagent-stop.js does (FIXED):
       // 1. extractMemories returns objects with metadata: null
-      // 2. subagent-stop sets mem.metadata = JSON.stringify({...})
-      // 3. insertMany -> insertMemory calls JSON.stringify(metadata) again
+      // 2. subagent-stop sets mem.metadata = { agentId, agentType } (plain object)
+      // 3. insertMany -> insertMemory calls JSON.stringify(metadata) once
 
       const memories = [{
         project: PROJECT_CWD,
@@ -1899,29 +1892,26 @@ describe('Integration: Full Hook Lifecycle', () => {
         metadata: null,
       }];
 
-      // Step 2: what subagent-stop.js does
+      // Step 2: what subagent-stop.js does (FIXED: plain object, not pre-stringified)
       for (const mem of memories) {
-        mem.metadata = JSON.stringify({
+        mem.metadata = {
           agentId: 'agent-xyz',
           agentType: 'researcher',
-        });
+        };
       }
 
-      // Step 3: insertMany
+      // Step 3: insertMany (insertMemory serializes metadata once)
       db.insertMany(memories);
 
       const retrieved = db.getTopMemories(PROJECT_CWD, 10);
       const m = retrieved[0];
 
-      // The stored value is double-encoded
-      const firstParse = JSON.parse(m.metadata);
-      assert.equal(typeof firstParse, 'string',
-        'BUG: First JSON.parse returns a string (double-encoded)');
-
-      const secondParse = JSON.parse(firstParse);
-      assert.equal(secondParse.agentId, 'agent-xyz',
-        'Second JSON.parse needed to get actual data');
-      assert.equal(secondParse.agentType, 'researcher');
+      // FIXED: single JSON.parse yields object directly (no double-encoding)
+      const parsed = JSON.parse(m.metadata);
+      assert.equal(typeof parsed, 'object',
+        'FIXED: Single JSON.parse returns object (no double-encoding)');
+      assert.equal(parsed.agentId, 'agent-xyz');
+      assert.equal(parsed.agentType, 'researcher');
 
       db.close();
     });

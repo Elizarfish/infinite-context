@@ -153,7 +153,7 @@ export class Store {
       touchMemory: this.db.prepare(`
         UPDATE memories SET access_count = access_count + 1,
         last_accessed = datetime('now'),
-        score = MIN(1.0, score + 0.05)
+        score = MIN(1.0, score + 0.02 * (1.0 - score))
         WHERE id = ?
       `),
       decayScores: this.db.prepare(`
@@ -328,6 +328,30 @@ export class Store {
   countOld(days) {
     const d = Math.max(1, Math.round(Number(days) || 30));
     return this._stmts.countOld.get(`-${d}`).cnt;
+  }
+
+  bulkDelete(ids) {
+    if (!ids || ids.length === 0) return 0;
+    const del = this.db.transaction((list) => {
+      let count = 0;
+      for (const id of list) {
+        count += this._stmts.deleteById.run(id).changes;
+      }
+      return count;
+    });
+    return del(ids);
+  }
+
+  getScoreDistribution() {
+    return this.db.prepare(
+      'SELECT MIN(10, CAST(score * 10 AS INTEGER)) as bucket, COUNT(*) as cnt FROM memories GROUP BY bucket ORDER BY bucket'
+    ).all();
+  }
+
+  getTimeline(days = 30) {
+    return this.db.prepare(
+      `SELECT DATE(created_at) as day, COUNT(*) as cnt FROM memories WHERE created_at > datetime('now', ? || ' days') GROUP BY day ORDER BY day`
+    ).all(`-${Math.max(1, days)}`);
   }
 
   getMemoriesPaginated({ project, category, search, sort = 'score', order = 'desc', page = 1, limit = 50 } = {}) {

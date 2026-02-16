@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { Store } from '../db/store.js';
-import { loadConfig } from '../core/config.js';
+import { loadConfig, saveConfig, DEFAULTS } from '../core/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INDEX_HTML = readFileSync(join(__dirname, 'index.html'), 'utf-8');
@@ -71,7 +71,9 @@ export function startServer(port = 3333) {
         const stats = db.getStats();
         const cfg = loadConfig();
         const categories = db.getCategoryStats(query.project || null);
-        return jsonResponse(res, { ...stats, categories, config: { maxMemoriesPerProject: cfg.maxMemoriesPerProject, pruneThreshold: cfg.pruneThreshold, decayFactor: cfg.decayFactor } });
+        const scoreDistribution = db.getScoreDistribution();
+        const timeline = db.getTimeline(30);
+        return jsonResponse(res, { ...stats, categories, scoreDistribution, timeline, config: { maxMemoriesPerProject: cfg.maxMemoriesPerProject, pruneThreshold: cfg.pruneThreshold, decayFactor: cfg.decayFactor } });
       }
 
       if (path === '/api/memories' && method === 'GET') {
@@ -103,7 +105,27 @@ export function startServer(port = 3333) {
 
       if (path === '/api/projects' && method === 'GET') {
         const stats = db.getStats();
-        return jsonResponse(res, stats.byProject);
+        const cfg = loadConfig();
+        const projects = stats.byProject.map(p => ({
+          ...p,
+          extractionMode: cfg.projects?.[p.project]?.extractionMode || null,
+        }));
+        return jsonResponse(res, projects);
+      }
+
+      if (path === '/api/project-config' && method === 'PUT') {
+        const body = await readBody(req);
+        if (!body.project) return jsonResponse(res, { error: 'project path required' }, 400);
+        const project = body.project;
+        const cfg = loadConfig();
+        const currentProjects = { ...(cfg.projects || {}) };
+        if (body.extractionMode && ['rules', 'llm', 'hybrid'].includes(body.extractionMode)) {
+          currentProjects[project] = { ...(currentProjects[project] || {}), extractionMode: body.extractionMode };
+        } else {
+          delete currentProjects[project];
+        }
+        saveConfig({ projects: currentProjects });
+        return jsonResponse(res, { project, config: currentProjects[project] || {} });
       }
 
       if (path === '/api/sessions' && method === 'GET') {
@@ -116,6 +138,37 @@ export function startServer(port = 3333) {
         const show = { ...cfg };
         show.stopwords = cfg.stopwords.size + ' words';
         return jsonResponse(res, show);
+      }
+
+      if (path === '/api/memories/bulk-delete' && method === 'POST') {
+        const body = await readBody(req);
+        const ids = Array.isArray(body.ids) ? body.ids.filter(id => Number.isInteger(id) && id > 0) : [];
+        if (ids.length === 0) return jsonResponse(res, { deleted: 0 });
+        const deleted = db.bulkDelete(ids);
+        return jsonResponse(res, { deleted });
+      }
+
+      if (path === '/api/config' && method === 'PUT') {
+        const body = await readBody(req);
+        if (body.reset) {
+          const { dbPath, dataDir, stopwords, debug, ...editable } = DEFAULTS;
+          const newCfg = saveConfig(editable);
+          const show = { ...newCfg };
+          show.stopwords = newCfg.stopwords.size + ' words';
+          return jsonResponse(res, show);
+        }
+        const newCfg = saveConfig(body);
+        const show = { ...newCfg };
+        show.stopwords = newCfg.stopwords.size + ' words';
+        return jsonResponse(res, show);
+      }
+
+      if (path === '/api/prune/preview' && method === 'GET') {
+        const cfg = loadConfig();
+        const belowScore = db.countBelowScore(parseFloat(query.threshold) || cfg.pruneThreshold);
+        const oldDays = parseInt(query.days) || 30;
+        const old = db.countOld(oldDays);
+        return jsonResponse(res, { belowScore, old, threshold: cfg.pruneThreshold, days: oldDays });
       }
 
       if (path === '/api/prune' && method === 'POST') {

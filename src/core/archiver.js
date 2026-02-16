@@ -78,7 +78,7 @@ export function extractMemories(turns, project, sessionId) {
 
     if (turn.userMessage?.text) {
       const userText = turn.userMessage.text;
-      if (userText.length > 20 && userText.length <= 500) {
+      if (userText.length > 20 && userText.length <= 500 && isUserMessageWorthSaving(userText)) {
         memories.push(buildMemory({
           project, sessionId, category: 'note',
           content: `User request: ${truncate(userText, 200)}`,
@@ -135,6 +135,19 @@ function isNotableCommand(cmd) {
   return patterns.some(p => p.test(cmd));
 }
 
+const DECISION_NOISE = [
+  /^now\s+(let|i)/i,
+  /^(good|great|perfect|alright|ok|excellent|nice|sure)\b/i,
+  /^(here|this|that|these|those)\s+(is|are|shows|looks|seems)/i,
+  /^no\s+action\s+needed/i,
+  /^all\s+\d+\s+tests?\s+pass/i,
+  /task\s+(as\s+)?(completed|done|finished)/i,
+  /let\s+me\s+(mark|share|send|notify|report|acknowledge|respond|quick)/i,
+  /^i('ll|'m\s+going\s+to)\s+(start|begin|continue|proceed|move\s+on|now)\b/i,
+  /^i\s+have\s+(a\s+thorough|all|now|the)\b/i,
+  /^(let me|i'll)\s+(create|write|build|implement|add|make|run|execute|generate)\s+(the|this|that|it)\b/i,
+];
+
 function extractDecisions(text) {
   const decisions = [];
   const lines = text.split('\n');
@@ -145,7 +158,8 @@ function extractDecisions(text) {
 
     const isDecision =
       /\b(i'll|i will|let's|let me|we should|we'll|the approach|instead of|rather than|decided to|choosing|going with|opted for)\b/i.test(trimmed) &&
-      !/\b(i'll read|i'll check|let me read|let me look|let me search|let me check)\b/i.test(trimmed);
+      !/\b(i'll read|i'll check|let me read|let me look|let me search|let me check)\b/i.test(trimmed) &&
+      !DECISION_NOISE.some(p => p.test(trimmed));
 
     if (isDecision) {
       decisions.push(trimmed);
@@ -153,6 +167,15 @@ function extractDecisions(text) {
   }
 
   return decisions.slice(0, 3);
+}
+
+function isUserMessageWorthSaving(text) {
+  const trimmed = text.trim();
+  if (/<task-notification>/i.test(trimmed)) return false;
+  if (/^<[a-z]/i.test(trimmed)) return false;
+  if ((trimmed.match(/<[^>]+>/g) || []).length > 3) return false;
+  if (/^\s*\{/.test(trimmed) && trimmed.length > 200) return false;
+  return true;
 }
 
 function extractArchitecture(thinking) {
@@ -164,12 +187,12 @@ function extractArchitecture(thinking) {
     if (trimmed.length < 30 || trimmed.length > 400) continue;
 
     const isArch =
-      /\b(architecture|design pattern|module|component|interface|abstraction|separation of concerns|dependency|coupling|cohesion|trade.?off|approach|strategy|layer)\b/i.test(trimmed);
+      /\b(architecture|design pattern|module structure|interface design|abstraction layer|separation of concerns|dependency injection|coupling|cohesion|trade.?off|strategy pattern|refactor(ing)?|migration plan|schema design|database design|api design|data model|state management|caching strategy|message queue|middleware|microservice|monolith|event.?driven|pub.?sub|clean architecture|domain.?driven|bounded context|service layer|repository pattern)\b/i.test(trimmed);
 
     if (isArch) {
       items.push(trimmed);
     }
   }
 
-  return items.slice(0, 2);
+  return items.slice(0, 3);
 }

@@ -750,7 +750,7 @@ describe('Stress: touchMemories at scale', () => {
 
     // Verify scores went up
     const after = db.getTopMemories('/touch', 1);
-    assert.equal(after[0].score, 0.55);
+    assert.equal(after[0].score, 0.51);
     assert.equal(after[0].access_count, 1);
     assert.ok(elapsed < 1000);
   });

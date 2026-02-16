@@ -2,6 +2,8 @@
 import { readStdin, openDb, log, runHook } from './common.js';
 import { parseTranscript, groupIntoTurns } from '../core/transcript-parser.js';
 import { extractMemories } from '../core/archiver.js';
+import { extractMemoriesLLM } from '../core/llm-archiver.js';
+import { getProjectConfig } from '../core/config.js';
 
 runHook('session-end', async () => {
   const input = await readStdin();
@@ -30,7 +32,25 @@ runHook('session-end', async () => {
 
       if (messages.length > 0) {
         const turns = groupIntoTurns(messages);
-        const memories = extractMemories(turns, project, sessionId);
+        const projectCfg = getProjectConfig(project);
+        let memories;
+
+        if (projectCfg.extractionMode === 'llm' || projectCfg.extractionMode === 'hybrid') {
+          try {
+            const llmMemories = await extractMemoriesLLM(turns, project, sessionId);
+            if (projectCfg.extractionMode === 'hybrid') {
+              memories = [...llmMemories, ...extractMemories(turns, project, sessionId)];
+            } else {
+              memories = llmMemories;
+            }
+          } catch (err) {
+            log(`session-end: LLM failed (${err.message}), falling back to rules`);
+            memories = extractMemories(turns, project, sessionId);
+          }
+        } else {
+          memories = extractMemories(turns, project, sessionId);
+        }
+
         if (memories.length > 0) {
           const inserted = db.insertMany(memories);
           db.saveCheckpoint(sessionId, transcriptPath, lastLine);

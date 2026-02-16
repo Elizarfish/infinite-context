@@ -9,7 +9,7 @@ import { extractMemories } from '../src/core/archiver.js';
 import { scoreMemory, computeImportance, extractKeywords, estimateTokens } from '../src/core/scorer.js';
 import { restoreContext, recallForPrompt } from '../src/core/restorer.js';
 import { parseTranscript, groupIntoTurns } from '../src/core/transcript-parser.js';
-import { resetConfig } from '../src/core/config.js';
+import { resetConfig, getProjectConfig, loadConfig, saveConfig, DEFAULTS } from '../src/core/config.js';
 import { Store } from '../src/db/store.js';
 
 const TMP_DIR = join(tmpdir(), 'ic-edge-test-' + Date.now());
@@ -369,7 +369,7 @@ describe('archiver edge cases', () => {
     assert.ok(decisions.length <= 3, `Should cap decisions at 3, got ${decisions.length}`);
   });
 
-  it('should limit architecture items to 2 per thinking block', () => {
+  it('should limit architecture items to 3 per thinking block', () => {
     const lines = [
       "The architecture pattern should use a clean module design with layered abstraction.",
       "The design pattern for the data layer should focus on separation of concerns.",
@@ -381,7 +381,7 @@ describe('archiver edge cases', () => {
     })];
     const result = extractMemories(turns, '/proj', 'sess');
     const arch = result.filter(m => m.category === 'architecture');
-    assert.ok(arch.length <= 2, `Should cap architecture at 2, got ${arch.length}`);
+    assert.ok(arch.length <= 3, `Should cap architecture at 3, got ${arch.length}`);
   });
 
   it('should handle turn with null userMessage', () => {
@@ -987,9 +987,6 @@ describe('Store edge cases', () => {
 // ============================================================
 // CONFIG EDGE CASES
 // ============================================================
-
-import { loadConfig } from '../src/core/config.js';
-
 // ============================================================
 // CODE-REVIEWER BUGS: Targeted tests for bugs found by code-reviewer
 // ============================================================
@@ -1288,5 +1285,187 @@ describe('config edge cases', () => {
     const cfg1 = loadConfig();
     const cfg2 = loadConfig();
     assert.strictEqual(cfg1, cfg2, 'Config should be cached (same reference)');
+  });
+
+  it('should have extractionMode defaults', () => {
+    assert.equal(DEFAULTS.extractionMode, 'rules');
+    assert.equal(DEFAULTS.llmModel, 'claude-opus-4-6');
+    assert.equal(DEFAULTS.llmMaxTranscriptChars, 12000);
+    const cfg = loadConfig();
+    assert.ok(['rules', 'llm', 'hybrid'].includes(cfg.extractionMode));
+    assert.ok(typeof cfg.llmModel === 'string' && cfg.llmModel.length > 0);
+  });
+
+  it('should validate extractionMode to allowed values', () => {
+    resetConfig();
+    const cfg = loadConfig();
+    assert.ok(['rules', 'llm', 'hybrid'].includes(cfg.extractionMode),
+      'extractionMode should be one of rules/llm/hybrid');
+  });
+});
+
+// ============================================================
+// getProjectConfig TESTS
+// ============================================================
+
+describe('getProjectConfig', () => {
+  beforeEach(() => resetConfig());
+
+  it('should return base config when projectPath is null', () => {
+    const base = loadConfig();
+    const cfg = getProjectConfig(null);
+    assert.equal(cfg.extractionMode, base.extractionMode);
+    assert.equal(cfg.maxRestoreTokens, base.maxRestoreTokens);
+  });
+
+  it('should return base config when projectPath is undefined', () => {
+    const base = loadConfig();
+    const cfg = getProjectConfig(undefined);
+    assert.equal(cfg.extractionMode, base.extractionMode);
+  });
+
+  it('should return base config when projectPath is empty string', () => {
+    const base = loadConfig();
+    const cfg = getProjectConfig('');
+    assert.equal(cfg.extractionMode, base.extractionMode);
+  });
+
+  it('should return base config when project has no overrides', () => {
+    const base = loadConfig();
+    const cfg = getProjectConfig('/nonexistent/project');
+    assert.equal(cfg.extractionMode, base.extractionMode);
+    assert.equal(cfg.maxRestoreTokens, base.maxRestoreTokens);
+  });
+
+  it('should merge project overrides', () => {
+    const base = loadConfig();
+    base.projects = { '/test/proj': { extractionMode: 'llm' } };
+    const merged = getProjectConfig('/test/proj');
+    assert.equal(merged.extractionMode, 'llm');
+    assert.equal(merged.maxRestoreTokens, 4000);
+  });
+
+  it('should deep merge categoryWeights', () => {
+    const base = loadConfig();
+    base.projects = { '/test/proj': { categoryWeights: { note: 0.9 } } };
+    const merged = getProjectConfig('/test/proj');
+    assert.equal(merged.categoryWeights.note, 0.9);
+    assert.equal(merged.categoryWeights.architecture, 1.0);
+  });
+
+  it('should ignore array overrides', () => {
+    const base = loadConfig();
+    base.projects = { '/test/proj': [1, 2, 3] };
+    const cfg = getProjectConfig('/test/proj');
+    assert.equal(cfg.extractionMode, base.extractionMode);
+  });
+
+  it('should ignore non-object overrides', () => {
+    const base = loadConfig();
+    base.projects = { '/test/proj': 'string-value' };
+    const cfg = getProjectConfig('/test/proj');
+    assert.equal(cfg.extractionMode, base.extractionMode);
+  });
+});
+
+// ============================================================
+// DECISION_NOISE PATTERN TESTS
+// ============================================================
+
+describe('DECISION_NOISE filtering', () => {
+  beforeEach(() => resetConfig());
+
+  const makeTurns = (text) => [{
+    allToolCalls: [], allToolResults: [],
+    assistantMessages: [{ text }],
+  }];
+
+  it('should filter "Now let me..." noise', () => {
+    const m = extractMemories(makeTurns('Now let me mark the task as completed and move to the next item'), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should filter "Good/great..." starts', () => {
+    const m = extractMemories(makeTurns('Great, I will proceed with implementing this feature now'), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should filter "All N tests pass" noise', () => {
+    const m = extractMemories(makeTurns("All 525 tests passed successfully with no failures"), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should filter "task completed" noise', () => {
+    const m = extractMemories(makeTurns("I'll mark the task as completed since everything works"), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should filter "I\'ll start/begin/continue" noise', () => {
+    const m = extractMemories(makeTurns("I'll start by examining the codebase structure in detail"), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should filter "let me share/send/notify" noise', () => {
+    const m = extractMemories(makeTurns("Let me share the results with the team and notify everyone"), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 0);
+  });
+
+  it('should keep real decisions through', () => {
+    const m = extractMemories(makeTurns("I'll use SQLite instead of PostgreSQL for simplicity and portability"), '/p', 's');
+    const decisions = m.filter(x => x.category === 'decision');
+    assert.equal(decisions.length, 1);
+    assert.ok(decisions[0].content.includes('SQLite'));
+  });
+});
+
+// ============================================================
+// isUserMessageWorthSaving TESTS
+// ============================================================
+
+describe('isUserMessageWorthSaving filtering', () => {
+  beforeEach(() => resetConfig());
+
+  const makeUserTurn = (text) => [{
+    userMessage: { text },
+    allToolCalls: [], allToolResults: [],
+    assistantMessages: [],
+  }];
+
+  it('should filter task-notification messages', () => {
+    const m = extractMemories(makeUserTurn('<task-notification>Agent completed work</task-notification>'), '/p', 's');
+    const notes = m.filter(x => x.category === 'note');
+    assert.equal(notes.length, 0);
+  });
+
+  it('should filter XML-starting messages', () => {
+    const m = extractMemories(makeUserTurn('<system-reminder>Some system context here for processing</system-reminder>'), '/p', 's');
+    const notes = m.filter(x => x.category === 'note');
+    assert.equal(notes.length, 0);
+  });
+
+  it('should filter messages with many XML tags', () => {
+    const m = extractMemories(makeUserTurn('Text <a>1</a> <b>2</b> <c>3</c> <d>4</d> more text'), '/p', 's');
+    const notes = m.filter(x => x.category === 'note');
+    assert.equal(notes.length, 0);
+  });
+
+  it('should filter large JSON-like messages', () => {
+    const json = '{ ' + '"key": "value", '.repeat(20) + '"end": true }';
+    const m = extractMemories(makeUserTurn(json), '/p', 's');
+    const notes = m.filter(x => x.category === 'note');
+    assert.equal(notes.length, 0);
+  });
+
+  it('should keep normal user messages', () => {
+    const m = extractMemories(makeUserTurn('Please add authentication to the API endpoints'), '/p', 's');
+    const notes = m.filter(x => x.category === 'note');
+    assert.equal(notes.length, 1);
+    assert.ok(notes[0].content.includes('authentication'));
   });
 });

@@ -108,7 +108,7 @@ describe('Store', () => {
 
     const after = db.getTopMemories('/test', 1)[0];
     assert.equal(after.access_count, 1);
-    assert.equal(after.score, 0.55); // +0.05
+    assert.equal(after.score, 0.51); // +0.02*(1.0-0.5) = +0.01
   });
 
   it('should handle checkpoints', () => {
